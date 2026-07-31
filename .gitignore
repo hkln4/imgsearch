@@ -3,3 +3,4 @@
 data/
 imagenette.tgz
 test.jpg
+__pycache__
