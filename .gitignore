@@ -3,4 +3,5 @@
 data/
 imagenette.tgz
 test.jpg
-__pycache__
+__pycache__/
+.env

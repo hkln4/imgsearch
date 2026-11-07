@@ -1,32 +1,13 @@
-import open_clip
-import torch
-import psycopg
 import ollama
-from pgvector.psycopg import register_vector
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, FileResponse
 
-DB_DSN = "host=localhost dbname=imgsearch user=postgres password=devpass"
+from common import connect, embed_text
+
 VLM_MODEL = "llava:7b"
 
-# --- model (loaded once at startup) ---
-device = "mps" if torch.backends.mps.is_available() else "cpu"
-model, _, _ = open_clip.create_model_and_transforms(
-    "ViT-B-32", pretrained="laion2b_s34b_b79k"
-)
-model = model.to(device).eval()
-tokenizer = open_clip.get_tokenizer("ViT-B-32")
-
-def embed_text(query):
-    tokens = tokenizer([query]).to(device)
-    with torch.no_grad():
-        emb = model.encode_text(tokens)
-        emb /= emb.norm(dim=-1, keepdim=True)
-    return emb.squeeze(0).cpu().tolist()
-
 # --- db connection (opened once) ---
-conn = psycopg.connect(DB_DSN)
-register_vector(conn)
+conn = connect()
 
 app = FastAPI()
 
