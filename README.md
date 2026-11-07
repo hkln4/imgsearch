@@ -47,80 +47,73 @@ user clicks an image, keeping ingestion fast.
 
 ### Requirements
 
-- Python 3.11+
-- Docker (for PostgreSQL + pgvector)
-- [Ollama](https://ollama.com) (for local VLM captioning)
-- Apple Silicon Mac or an NVIDIA GPU recommended (CPU works, but slower)
+- Docker with Compose v2
+- [Ollama](https://ollama.com) on the host — optional, only needed for captions
 
-### 1. Database
+### Quickstart
 
 ```bash
-docker run -d --name imgsearch-db \
-  -e POSTGRES_PASSWORD=devpass \
-  -e POSTGRES_DB=imgsearch \
-  -p 5432:5432 \
-  pgvector/pgvector:pg17
-```
+cp .env.example .env
 
-Create the table:
-
-```bash
-docker exec -i imgsearch-db psql -U postgres -d imgsearch -c "DROP TABLE IF EXISTS images; CREATE TABLE images (id serial PRIMARY KEY, path text UNIQUE NOT NULL, category text, caption text, created_at timestamptz DEFAULT now(), embedding vector(512));"
-```
-
-### 2. Python environment
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install open-clip-torch torchvision "psycopg[binary]" pgvector pillow fastapi "uvicorn[standard]" ollama
-```
-
-### 3. Dataset
-
-```bash
+# dataset (Imagenette, 160px)
 curl -L -o imagenette.tgz https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz
 mkdir -p data && tar -xzf imagenette.tgz -C data
+
+docker compose up -d --build                 # Postgres + pgvector, API
+docker compose run --rm api python ingest.py  # embed images into Postgres
 ```
 
-### 4. Ingest images
+Open **http://localhost:8000** and search by meaning.
 
-```bash
-python3 ingest.py
-```
+`init.sql` creates the schema and the HNSW index when the database volume is
+first created. To start from an empty database: `docker compose down -v`.
 
-This embeds the images and writes them to Postgres. Then create the vector index:
+The database is exposed on host port **5433** so it does not clash with a
+locally installed Postgres.
 
-```bash
-docker exec -i imgsearch-db psql -U postgres -d imgsearch -c "CREATE INDEX ON images USING hnsw (embedding vector_cosine_ops);"
-```
+### Captions (optional)
 
-### 5. Local VLM
-
-Make sure Ollama is running and the model is pulled:
+Ollama stays on the host so it can use the host GPU / Apple Silicon. The API
+container reaches it at `host.docker.internal:11434` (set via `OLLAMA_HOST` in
+`docker-compose.yml`).
 
 ```bash
 ollama pull llava:7b
+ollama serve        # skip if the Ollama app is already running
 ```
 
-### 6. Run
+On Linux, Ollama listens on loopback only by default; start it with
+`OLLAMA_HOST=0.0.0.0 ollama serve` so the container can reach it.
+
+Search works without Ollama; only the click-to-describe feature needs it.
+
+### Running on the host (without the API container)
+
+Useful for development, and on Apple Silicon it runs CLIP on MPS instead of CPU.
 
 ```bash
-python3 -m uvicorn app:app --reload
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+docker compose up -d db
+python ingest.py
+uvicorn app:app --reload
 ```
 
-Open **http://127.0.0.1:8000**, search by meaning, and click any result to
-describe it.
+The host scripts read `DATABASE_URL` from `.env`.
 
 ## Project structure
 
 ```
 .
-├── ingest.py     # ingestion pipeline: folder -> embeddings -> Postgres
-├── search.py     # standalone search / ranking sanity check
-├── app.py        # FastAPI server + web UI + on-demand captioning
-├── data/         # Imagenette images (downloaded)
-└── README.md
+├── common.py           # CLIP model + DB connection shared by all scripts
+├── ingest.py           # ingestion pipeline: folder -> embeddings -> Postgres
+├── app.py              # FastAPI server + web UI + on-demand captioning
+├── init.sql            # schema + HNSW index, run on first DB start
+├── docker-compose.yml  # db (pgvector) + api
+├── Dockerfile          # API image (CPU-only torch)
+├── requirements.txt
+└── data/               # Imagenette images (downloaded, not committed)
 ```
 
 ## Notes & limitations
