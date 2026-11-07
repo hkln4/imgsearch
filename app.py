@@ -1,5 +1,5 @@
 import ollama
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 
 from common import connect, embed_text
@@ -43,9 +43,13 @@ def caption(id: int):
     conn.commit()
     return {"caption": text, "cached": False}
 
+# serves only files registered in the db; taking a raw path would expose any file on disk
 @app.get("/image")
-def image(path: str):
-    return FileResponse(path)
+def image(id: int):
+    row = conn.execute("SELECT path FROM images WHERE id = %s", (id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="image not found")
+    return FileResponse(row[0])
 
 @app.get("/", response_class=HTMLResponse)
 def home():
@@ -216,7 +220,7 @@ def home():
         card.onclick = () => describe(it.id, card);
         card.innerHTML =
           '<div class="thumb">' +
-            '<img src="/image?path=' + encodeURIComponent(it.path) + '">' +
+            '<img src="/image?id=' + it.id + '">' +
             '<div class="dist-pill">' + it.dist.toFixed(3) + '</div>' +
             '<div class="overlay"><span>Click to describe →</span></div>' +
           '</div>' +
