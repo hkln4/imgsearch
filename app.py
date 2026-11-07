@@ -26,18 +26,22 @@ def search(q: str, k: int = 12):
 def caption(id: int):
     row = conn.execute("SELECT path, caption FROM images WHERE id = %s", (id,)).fetchone()
     if row is None:
-        return {"caption": "not found"}
+        raise HTTPException(status_code=404, detail="image not found")
     path, existing = row
     if existing:                      # already captioned before -> return cached
         return {"caption": existing, "cached": True}
-    response = ollama.chat(
-        model=VLM_MODEL,
-        messages=[{
-            "role": "user",
-            "content": "Describe this image in one short sentence.",
-            "images": [path],
-        }],
-    )
+    # captions are optional: if Ollama is down or the model is not pulled, say so instead of a 500
+    try:
+        response = ollama.chat(
+            model=VLM_MODEL,
+            messages=[{
+                "role": "user",
+                "content": "Describe this image in one short sentence.",
+                "images": [path],
+            }],
+        )
+    except (ConnectionError, ollama.ResponseError) as e:
+        raise HTTPException(status_code=503, detail=f"captioning unavailable: {e}")
     text = response["message"]["content"].strip()
     conn.execute("UPDATE images SET caption = %s WHERE id = %s", (text, id))
     conn.commit()
@@ -239,6 +243,11 @@ def home():
       cap.innerHTML = '<span class="spinner"></span>describing...';
       const res = await fetch('/caption?id=' + id);
       const data = await res.json();
+      if (!res.ok) {                  // leave it retryable, e.g. after starting Ollama
+        cap.className = 'cap empty';
+        cap.textContent = data.detail || 'captioning failed';
+        return;
+      }
       cap.className = 'cap';
       cap.textContent = data.caption;
       cap.dataset.done = '1';
