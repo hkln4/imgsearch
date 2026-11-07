@@ -3,7 +3,7 @@ from pathlib import Path
 from common import connect, embed_image
 
 DATA_DIR = "data/imagenette2-160/train"
-CATEGORIES_LIMIT = 5      # only ingest first 5 categories
+CATEGORIES_LIMIT = 10     # all 10 Imagenette classes (eval ground truth)
 PER_CATEGORY_LIMIT = 100  # max images per category
 
 # image paths
