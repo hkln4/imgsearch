@@ -1,0 +1,36 @@
+services:
+  db:
+    image: pgvector/pgvector:0.8.6-pg17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: imgsearch
+    ports:
+      - "5433:5432"   # 5433 on the host avoids clashing with a local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d imgsearch"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/imgsearch
+      OLLAMA_HOST: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # needed on Linux; built in on Docker Desktop
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data:ro
+      - model-cache:/root/.cache   # CLIP weights, downloaded once
+    depends_on:
+      db:
+        condition: service_healthy   # app.py connects at import time
+
+volumes:
+  pgdata:
+  model-cache:

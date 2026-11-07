@@ -1,0 +1,9 @@
+.venv/
+data/
+imagenette.tgz
+test.jpg
+demo.gif
+.env
+.git/
+__pycache__/
+.DS_Store
