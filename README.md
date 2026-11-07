@@ -63,12 +63,13 @@ cassette player (0.92).
 
 | | p50 | p95 |
 |--|--|--|
-| Exact (seq scan) | 5.3 ms | 7.0 ms |
-| HNSW | 3.3 ms | 4.7 ms |
-| Round trip only (`SELECT 1`) | 0.12 ms | 0.26 ms |
+| Exact (seq scan) | 5.8 ms | 7.3 ms |
+| HNSW | 3.4 ms | 4.7 ms |
+| Round trip only (`SELECT 1`) | 0.11 ms | 0.29 ms |
 
-HNSW recall@10 against exact search is 1.000. With only 1000 vectors this is
-expected and says little about HNSW at scale; see limitations.
+Latency varies by about 0.5 ms between runs. HNSW recall@10 against exact
+search is 1.000. With only 1000 vectors this is expected and says little about
+HNSW at scale; see limitations.
 
 ### Reproducing
 
