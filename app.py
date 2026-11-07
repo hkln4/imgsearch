@@ -1,25 +1,43 @@
+from contextlib import asynccontextmanager
+
 import ollama
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, FileResponse
+from pgvector.psycopg import register_vector
+from psycopg_pool import ConnectionPool
 
-from common import connect, embed_text
+from common import DATABASE_URL, embed_text
 
 VLM_MODEL = "llava:7b"
 
-# --- db connection (opened once) ---
-# autocommit: otherwise every read leaves the connection idle in transaction,
-# and one failed statement would abort it for all later requests
-conn = connect()
-conn.autocommit = True
+# --- db connection pool ---
+# Sync endpoints run in a thread pool, so each request borrows its own connection:
+# on one shared connection, concurrent transactions nested into each other and
+# failed with OutOfOrderTransactionNesting. autocommit is a connection kwarg so it
+# is already on when configure runs; otherwise register_vector's type lookup would
+# leave every new connection idle in transaction.
+pool = ConnectionPool(
+    DATABASE_URL,
+    kwargs={"autocommit": True},
+    configure=register_vector,
+    open=False,
+)
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app):
+    pool.open(wait=True)
+    yield
+    pool.close()
+
+app = FastAPI(lifespan=lifespan)
 
 # HNSW returns at most hnsw.ef_search rows (default 40, max 1000), so it is raised
-# to k for this query; otherwise k > 40 would be silently truncated
+# to k for this query; set_config(..., true) is transaction-local, so the setting
+# ends at commit and does not leak to the next borrower of the connection
 @app.get("/search")
 def search(q: str, k: int = Query(12, ge=1, le=1000)):
     emb = embed_text(q)
-    with conn.transaction():
+    with pool.connection() as conn, conn.transaction():
         conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(max(40, k)),))
         rows = conn.execute(
             """SELECT id, path, category, embedding <=> %s::vector AS dist
@@ -31,13 +49,15 @@ def search(q: str, k: int = Query(12, ge=1, le=1000)):
 # runs the VLM on demand for a single image, caches the result in the db
 @app.get("/caption")
 def caption(id: int):
-    row = conn.execute("SELECT path, caption FROM images WHERE id = %s", (id,)).fetchone()
+    with pool.connection() as conn:
+        row = conn.execute("SELECT path, caption FROM images WHERE id = %s", (id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="image not found")
     path, existing = row
     if existing:                      # already captioned before -> return cached
         return {"caption": existing, "cached": True}
     # captions are optional: if Ollama is down or the model is not pulled, say so instead of a 500
+    # (no connection is held here: the VLM call takes seconds and would starve the pool)
     try:
         response = ollama.chat(
             model=VLM_MODEL,
@@ -50,13 +70,15 @@ def caption(id: int):
     except (ConnectionError, ollama.ResponseError) as e:
         raise HTTPException(status_code=503, detail=f"captioning unavailable: {e}")
     text = response["message"]["content"].strip()
-    conn.execute("UPDATE images SET caption = %s WHERE id = %s", (text, id))
+    with pool.connection() as conn:
+        conn.execute("UPDATE images SET caption = %s WHERE id = %s", (text, id))
     return {"caption": text, "cached": False}
 
 # serves only files registered in the db; taking a raw path would expose any file on disk
 @app.get("/image")
 def image(id: int):
-    row = conn.execute("SELECT path FROM images WHERE id = %s", (id,)).fetchone()
+    with pool.connection() as conn:
+        row = conn.execute("SELECT path FROM images WHERE id = %s", (id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="image not found")
     return FileResponse(row[0])
