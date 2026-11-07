@@ -7,7 +7,10 @@ from common import connect, embed_text
 VLM_MODEL = "llava:7b"
 
 # --- db connection (opened once) ---
+# autocommit: otherwise every read leaves the connection idle in transaction,
+# and one failed statement would abort it for all later requests
 conn = connect()
+conn.autocommit = True
 
 app = FastAPI()
 
@@ -44,7 +47,6 @@ def caption(id: int):
         raise HTTPException(status_code=503, detail=f"captioning unavailable: {e}")
     text = response["message"]["content"].strip()
     conn.execute("UPDATE images SET caption = %s WHERE id = %s", (text, id))
-    conn.commit()
     return {"caption": text, "cached": False}
 
 # serves only files registered in the db; taking a raw path would expose any file on disk
