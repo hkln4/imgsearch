@@ -1,5 +1,5 @@
 import ollama
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, FileResponse
 
 from common import connect, embed_text
@@ -14,14 +14,18 @@ conn.autocommit = True
 
 app = FastAPI()
 
+# HNSW returns at most hnsw.ef_search rows (default 40, max 1000), so it is raised
+# to k for this query; otherwise k > 40 would be silently truncated
 @app.get("/search")
-def search(q: str, k: int = 12):
+def search(q: str, k: int = Query(12, ge=1, le=1000)):
     emb = embed_text(q)
-    rows = conn.execute(
-        """SELECT id, path, category, embedding <=> %s::vector AS dist
-           FROM images ORDER BY dist LIMIT %s""",
-        (emb, k),
-    ).fetchall()
+    with conn.transaction():
+        conn.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(max(40, k)),))
+        rows = conn.execute(
+            """SELECT id, path, category, embedding <=> %s::vector AS dist
+               FROM images ORDER BY dist LIMIT %s""",
+            (emb, k),
+        ).fetchall()
     return [{"id": i, "path": p, "category": c, "dist": float(d)} for i, p, c, d in rows]
 
 # runs the VLM on demand for a single image, caches the result in the db
