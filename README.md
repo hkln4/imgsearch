@@ -41,7 +41,66 @@ user clicks an image, keeping ingestion fast.
 - **VLM:** LLaVA (7B) served locally through Ollama
 - **API / UI:** FastAPI + a single-file frontend
 - **Dataset:** [Imagenette](https://github.com/fastai/imagenette) (a 10-class
-  subset of ImageNet)
+  subset of ImageNet; 100 train images per class are ingested)
+
+## Results
+
+Measured on an Apple M2 (16 GB) with `python eval.py`; full per-class table and
+hardware details in [`results/eval.md`](results/eval.md).
+
+**Text-to-image retrieval.** One query per class (`"a photo of a {class}."`)
+against 1000 images (10 classes × 100), with class labels as ground truth:
+
+| P@1 | P@5 | P@10 | R-precision |
+|-----|-----|------|-------------|
+| 1.00 | 1.00 | 1.00 | 0.96 |
+
+P@k is saturated, so R-precision (precision over the top 100, i.e. the whole
+class) is the informative number; the weakest classes are chain saw (0.87) and
+cassette player (0.92).
+
+**HNSW vs exact search.** 100 text queries, k = 10, default index settings:
+
+| | p50 | p95 |
+|--|--|--|
+| Exact (seq scan) | 5.3 ms | 7.0 ms |
+| HNSW | 3.3 ms | 4.7 ms |
+| Round trip only (`SELECT 1`) | 0.12 ms | 0.26 ms |
+
+HNSW recall@10 against exact search is 1.000. With only 1000 vectors this is
+expected and says little about HNSW at scale; see limitations.
+
+### Reproducing
+
+With the stack running and images ingested (see [Setup](#setup)):
+
+```bash
+pip install -r requirements-dev.txt
+python eval.py          # writes results/eval.json and results/eval.md
+python -m pytest tests  # metric unit tests, no DB or model needed
+```
+
+`eval.py` runs on the host so queries use MPS on Apple Silicon. It forces each
+search path with `SET LOCAL` and checks the plan with `EXPLAIN`, because the
+planner may pick either plan on its own. Images are embedded in the container
+on CPU and queries on the host; the measured difference is negligible
+(max |1 − cosine| ≈ 1e-7).
+
+## Design decisions
+
+- **pgvector instead of a dedicated vector DB.** Vectors, labels and cached
+  captions live in one Postgres table, so search, filtering and the caption
+  cache are plain SQL with no second service to run. A dedicated vector DB
+  would pay off at much larger scale or with heavy filtered ANN workloads.
+- **HNSW instead of IVFFlat.** HNSW needs no training step, so the index is
+  created on the empty table in `init.sql` and maintained on insert; IVFFlat
+  needs data before building its lists. The cost is slower inserts and more
+  memory, irrelevant at this size. An HNSW scan returns at most
+  `hnsw.ef_search` rows, so `/search` raises it to `k` per query.
+- **Captions on demand.** CLIP embeds the image itself, so captions are not
+  needed for search, only for display. LLaVA-7B takes ~4 s per image on a warm
+  M2, so captioning all 1000 images up front would take over an hour. Captions are
+  generated on click and cached in Postgres, and search works without Ollama.
 
 ## Setup
 
@@ -109,6 +168,9 @@ The host scripts read `DATABASE_URL` from `.env`.
 ├── common.py           # CLIP model + DB connection shared by all scripts
 ├── ingest.py           # ingestion pipeline: folder -> embeddings -> Postgres
 ├── app.py              # FastAPI server + web UI + on-demand captioning
+├── eval.py             # retrieval quality + HNSW vs exact benchmark
+├── metrics.py          # metric functions (unit-tested in tests/)
+├── results/            # eval output (JSON + markdown)
 ├── init.sql            # schema + HNSW index, run on first DB start
 ├── docker-compose.yml  # db (pgvector) + api
 ├── Dockerfile          # API image (CPU-only torch)
@@ -116,12 +178,20 @@ The host scripts read `DATABASE_URL` from `.env`.
 └── data/               # Imagenette images (downloaded, not committed)
 ```
 
-## Notes & limitations
+## Limitations
 
-- Search only returns images that exist in the collection — a semantic search
-  always returns *something*, so out-of-domain queries return the least-bad match
-  rather than "no result".
-- Ingestion currently loads a subset of Imagenette (configurable in `ingest.py`
-  via `CATEGORIES_LIMIT` / `PER_CATEGORY_LIMIT`).
-- Captioning quality is bounded by the small LLaVA-7B model; it identifies main
-  subjects reliably but can hallucinate background details.
+- **Small corpus.** 1000 vectors is too few to show the HNSW recall/latency
+  trade-off: recall is 1.000 and the planner switches to a seq scan from
+  k = 28. The latency numbers show relative cost, not behaviour at scale.
+- **Easy dataset.** Imagenette's 10 classes are visually distinct and close to
+  CLIP's training distribution; the scores do not transfer to fine-grained or
+  domain-specific collections.
+- **Narrow eval.** One prompt per class and class-level relevance only. Known
+  CLIP weaknesses (counting, spatial relations, negation, fine-grained
+  distinctions) are not tested here.
+- **Always returns something.** Semantic search has no "no result"; an
+  out-of-domain query returns the least-bad match.
+- **Caption quality** is bounded by LLaVA-7B, which can hallucinate background
+  details.
+- Code is copied into the image, so after editing it run
+  `docker compose up -d --build` before `docker compose run`.
