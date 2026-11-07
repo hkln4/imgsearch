@@ -1,0 +1,136 @@
+{
+  "timestamp": "2026-11-07T14:48:41+00:00",
+  "seed": 0,
+  "model": "ViT-B-32 (laion2b_s34b_b79k)",
+  "corpus": {
+    "images": 1000,
+    "classes": 10,
+    "dims": 512
+  },
+  "hardware": {
+    "platform": "macOS-15.7.3-arm64-arm-64bit-Mach-O",
+    "cpu": "Apple M2",
+    "ram_gb": 16.0,
+    "python": "3.13.1",
+    "torch": "2.13.0",
+    "query_embedding_device": "mps",
+    "postgres": "17.11 (Debian 17.11-1.pgdg12+2)",
+    "pgvector": "0.8.6",
+    "docker_vm": "8 CPUs, 8217858048 bytes"
+  },
+  "quality": {
+    "prompt_template": "a photo of a {}.",
+    "search": "exact",
+    "per_class": {
+      "tench": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.99,
+        "n_relevant": 100
+      },
+      "English springer": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.98,
+        "n_relevant": 100
+      },
+      "cassette player": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.92,
+        "n_relevant": 100
+      },
+      "chain saw": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.87,
+        "n_relevant": 100
+      },
+      "church": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.98,
+        "n_relevant": 100
+      },
+      "French horn": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.98,
+        "n_relevant": 100
+      },
+      "garbage truck": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.99,
+        "n_relevant": 100
+      },
+      "gas pump": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.94,
+        "n_relevant": 100
+      },
+      "golf ball": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.96,
+        "n_relevant": 100
+      },
+      "parachute": {
+        "p@1": 1.0,
+        "p@5": 1.0,
+        "p@10": 1.0,
+        "r_precision": 0.97,
+        "n_relevant": 100
+      }
+    },
+    "mean": {
+      "p@1": 1.0,
+      "p@5": 1.0,
+      "p@10": 1.0,
+      "r_precision": 0.958
+    }
+  },
+  "index": {
+    "k": 10,
+    "n_queries": 100,
+    "ef_search": 40,
+    "index_options": "defaults (m=16, ef_construction=64)",
+    "planner_uses_index_by_default": true,
+    "hnsw_recall_vs_exact": {
+      "mean": 1.0,
+      "min": 1.0
+    },
+    "latency": {
+      "exact": {
+        "p50_ms": 5.761395499575883,
+        "p95_ms": 7.308604800391549,
+        "n": 500
+      },
+      "hnsw": {
+        "p50_ms": 3.438875000028929,
+        "p95_ms": 4.742202050101696,
+        "n": 500
+      }
+    },
+    "roundtrip_baseline": {
+      "p50_ms": 0.10837449963219115,
+      "p95_ms": 0.2929955504441751,
+      "n": 500
+    }
+  },
+  "embedding_drift": {
+    "n": 20,
+    "max_abs_1_minus_cosine": 1.4041216933602385e-07,
+    "max_abs_component_diff": 1.7918646335601807e-06
+  }
+}
